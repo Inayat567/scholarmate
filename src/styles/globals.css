@@ -44,13 +44,12 @@
 }
 
 :root {
-
-    --background: 255 255 255; /* white */
-    --foreground: 17 24 39;   /* gray-900 */
-    --primary: 37 99 235;     /* blue-600 */
-    --secondary: 124 58 237;  /* purple-600 */
-    --success: 16 185 129;    /* green-500 */
-    --error: 239 68 68;       /* red-500 */
+  --background: rgb(255 255 255); /* ✅ wrapped in rgb */
+  --foreground: rgb(17 24 39);
+  --primary: rgb(37 99 235);
+  --secondary: rgb(124 58 237);
+  --success: rgb(16 185 129);
+  --error: rgb(239 68 68);
   --radius: 0.625rem;
   /* --background: oklch(1 0 0);
   --foreground: oklch(0.129 0.042 264.695); */
@@ -86,12 +85,12 @@
 }
 
 .dark {
-    --background: 15 23 42;   /* dark navy */
-    --foreground: 249 250 251;/* gray-50 */
-    --primary: 59 130 246;    /* blue-500 */
-    --secondary: 167 139 250; /* purple-400 */
-    --success: 52 211 153;    /* green-400 */
-    --error: 248 113 113;     /* red-400 */
+  --background: rgb(10, 17, 31); /* ✅ */
+  --foreground: rgb(241, 246, 250);
+  --primary: rgb(36, 100, 202);
+  --secondary: rgb(167 139 250);
+  --success: rgb(52 211 153);
+  --error: rgb(248 113 113);
   /* --background: oklch(0.129 0.042 264.695); */
   /* --foreground: oklch(0.984 0.003 247.858); */
   --card: oklch(0.208 0.042 265.755);
