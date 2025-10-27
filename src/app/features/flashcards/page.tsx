@@ -1,71 +1,80 @@
 "use client";
 
-import { useState, DragEvent } from "react";
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { Loader2, Upload, FileIcon } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
-
-interface Flashcard {
-    question: string;
-    answer: string;
-}
+import { acceptedMimeTypes, fileToBase64 } from "@/lib/utils";
+import FileUploader from "@/components/UploadBox";
 
 export default function FlashcardsPage() {
     const [input, setInput] = useState("");
     const [files, setFiles] = useState<File[]>([]);
     const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
     const [loading, setLoading] = useState(false);
-    const [dragActive, setDragActive] = useState(false);
     const [currentIndex, setCurrentIndex] = useState(0);
     const [flipped, setFlipped] = useState(false);
     const [completed, setCompleted] = useState(false);
 
-    const handleGenerate = () => {
+    const handleGenerate = async () => {
         if (!input.trim() && files.length === 0) return;
-
         setLoading(true);
         setFlashcards([]);
         setCurrentIndex(0);
         setFlipped(false);
         setCompleted(false);
 
-        // Mock AI-generated flashcards
-        setTimeout(() => {
-            const generated: Flashcard[] = [
-                { question: "What is ScholarMate?", answer: "An AI-powered study companion." },
-                { question: "How does it help students?", answer: "Generates flashcards, summaries, and quizzes automatically." },
-                { question: "Which file formats are supported?", answer: "PDF, DOCX, PPT, CSV, images, and more." },
-            ];
-            setFlashcards(generated);
+        try {
+            const validFiles = files.filter((file) =>
+                acceptedMimeTypes.includes(file.type)
+            );
+
+            const base64Files = await Promise.all(
+                validFiles.map(async (file) => {
+                    const data = await fileToBase64(file);
+                    return { name: file.name, mimeType: file.type, data };
+                })
+            );
+
+            const res = await fetch("/api/ai/generate", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    type: "flashcards",
+                    text: input,
+                    files: base64Files,
+                }),
+            });
+
+            if (!res.ok) throw new Error("Failed to generate flashcards");
+            const result = await res.json();
+            
+            // Assuming the API returns { result: "[{...}, {...}]" } as a string
+            // If it returns { result: [{...}, {...}] } as an array, use:
+            // setFlashcards(result.result || []);
+
+            // If it returns { flashcards: [...] } as in your original code:
+            setFlashcards(result.flashcards || []);
+
+        } catch (err) {
+            console.error("Error generating flashcards:", err);
+        } finally {
             setLoading(false);
-        }, 1500);
-    };
-
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files) {
-            setFiles((prev) => [...prev, ...Array.from(e.target.files)]);
-        }
-    };
-
-    const handleDrop = (e: DragEvent<HTMLDivElement>) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setDragActive(false);
-
-        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-            setFiles((prev) => [...prev, ...Array.from(e.dataTransfer.files)]);
-            e.dataTransfer.clearData();
         }
     };
 
     const handleNext = () => {
-        if (currentIndex < flashcards.length - 1) {
-            setCurrentIndex(currentIndex + 1);
-            setFlipped(false);
+        if (!flipped) {
+            setFlipped(true);
         } else {
-            setCompleted(true);
+            if (currentIndex < flashcards.length - 1) {
+                setCurrentIndex(currentIndex + 1);
+                setFlipped(false);
+            } else {
+                setCompleted(true);
+            }
         }
     };
 
@@ -82,13 +91,10 @@ export default function FlashcardsPage() {
 
     const renderResult = () => {
         if (!completed) return null;
-
         const total = flashcards.length;
         let message = "";
         let emoji = "";
-
         if (total === 0) return null;
-
         if (total <= 1) {
             message = "You completed your flashcard! 🎉";
             emoji = "🎉";
@@ -99,7 +105,6 @@ export default function FlashcardsPage() {
             message = "Excellent! You mastered all your flashcards! 🏆";
             emoji = "🏆";
         }
-
         return (
             <Card className="mt-8 text-center">
                 <CardContent>
@@ -113,14 +118,13 @@ export default function FlashcardsPage() {
     const currentCard = flashcards[currentIndex];
 
     return (
-        <div className="min-h-screen flex flex-col items-center px-6 py-12">
+        <div className="min-h-screen flex flex-col items-center px-6 py-12 pb-20">
             <main className="flex flex-col gap-8 w-full max-w-2xl">
                 <h1 className="text-3xl font-bold text-center">Smart Flashcards</h1>
                 <p className="text-center text-muted-foreground">
                     Paste your notes or upload study files to generate interactive flashcards instantly.
                 </p>
 
-                {/* Input Section */}
                 <Card>
                     <CardHeader>
                         <CardTitle>Study Material</CardTitle>
@@ -133,47 +137,9 @@ export default function FlashcardsPage() {
                             className="min-h-[150px]"
                         />
 
-                        <div
-                            onDragOver={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                setDragActive(true);
-                            }}
-                            onDragLeave={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                setDragActive(false);
-                            }}
-                            onDrop={handleDrop}
-                            className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition ${dragActive ? "border-primary bg-primary/5" : "border-muted-foreground/30"
-                                }`}
-                        >
-                            <input
-                                id="file-upload"
-                                type="file"
-                                accept=".pdf,.doc,.docx,.ppt,.pptx,.csv,.jpg,.jpeg,.png,.gif"
-                                multiple
-                                onChange={handleFileChange}
-                                className="hidden"
-                            />
-                            <label htmlFor="file-upload" className="flex flex-col items-center gap-2 cursor-pointer">
-                                <Upload className="h-8 w-8 text-primary" />
-                                <span className="text-sm text-muted-foreground">
-                                    Drag & drop files here, or <span className="text-primary">browse</span>
-                                </span>
-                            </label>
-                        </div>
-
-                        {files.length > 0 && (
-                            <ul className="text-sm text-muted-foreground space-y-1">
-                                {files.map((file, idx) => (
-                                    <li key={idx} className="flex items-center gap-2">
-                                        <FileIcon className="h-4 w-4 text-primary" />
-                                        {file.name}
-                                    </li>
-                                ))}
-                            </ul>
-                        )}
+                        <FileUploader
+                            onFilesChange={(allFiles) => setFiles(allFiles)}
+                        />
 
                         <div className="flex justify-end">
                             <Button
@@ -181,41 +147,38 @@ export default function FlashcardsPage() {
                                 disabled={loading || (!input && files.length === 0)}
                             >
                                 {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                                Generate Flashcards
+                                {loading ? "Generating..." : "Generate Flashcards"}
                             </Button>
                         </div>
                     </CardContent>
                 </Card>
 
-                {/* Flashcard Display */}
                 {flashcards.length > 0 && !completed && currentCard && (
                     <motion.div
-                        className="relative w-full h-48 sm:h-60 mt-8 cursor-pointer"
+                        className="relative w-full h-48 sm:h-60 mt-8"
                         style={{ perspective: 1000 }}
-                        onClick={toggleFlip}
                     >
                         <motion.div
+                            onClick={toggleFlip}
                             animate={{ rotateY: flipped ? 180 : 0 }}
                             transition={{ duration: 0.6 }}
-                            className="relative w-full h-full"
+                            className="relative w-full h-full cursor-pointer"
+                            style={{ transformStyle: "preserve-3d" }}
                         >
-                            {/* Front */}
                             <div
                                 className="absolute w-full h-full rounded-xl shadow-lg bg-white dark:bg-neutral-900 flex items-center justify-center p-4 text-center font-semibold text-lg"
                                 style={{
-                                    transform: flipped ? "rotateY(180deg)" : undefined,
-                                    backfaceVisibility: flipped ? "hidden" : 'visible',
+                                    backfaceVisibility: "hidden",
                                 }}
                             >
                                 📘 {currentCard.question}
                             </div>
 
-                            {/* Back */}
                             <div
                                 className="absolute w-full h-full rounded-xl shadow-lg bg-primary/10 dark:bg-primary/20 flex items-center justify-center p-4 text-center font-medium"
                                 style={{
-                                    transform: flipped ? undefined : "rotateY(180deg)",
-                                    backfaceVisibility: !flipped ? "hidden" : 'visible',
+                                    transform: "rotateY(180deg)",
+                                    backfaceVisibility: "hidden",
                                 }}
                             >
                                 ✅ {currentCard.answer}
@@ -226,15 +189,12 @@ export default function FlashcardsPage() {
                                 Back
                             </Button>
                             <Button onClick={handleNext}>
-                                {currentIndex === flashcards.length - 1 ? "Finish" : "Next"}
+                                {currentIndex === flashcards.length - 1 && flipped ? "Finish" : (flipped ? "Next" : "Show Answer")}
                             </Button>
                         </div>
                     </motion.div>
-
-
                 )}
 
-                {/* Final Result */}
                 {renderResult()}
             </main>
         </div>

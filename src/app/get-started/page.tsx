@@ -1,38 +1,36 @@
 "use client";
 
-import { useState, DragEvent } from "react";
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { Loader2, Upload, FileIcon } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-
-type TabKey = "summaries" | "flashcards" | "quizzes";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
+import { acceptedMimeTypes, fileToBase64 } from "@/lib/utils";
+import { toast } from "sonner";
+import FileUploader from "@/components/UploadBox";
 
 export default function GetStartedPage() {
     const [activeTab, setActiveTab] = useState<TabKey>("summaries");
-
-    // Separate state per tab
     const [inputs, setInputs] = useState<Record<TabKey, string>>({
         summaries: "",
         flashcards: "",
         quizzes: "",
     });
-
-    const [outputs, setOutputs] = useState<Record<TabKey, string>>({
+    const [outputs, setOutputs] = useState<Record<TabKey, any>>({
         summaries: "",
-        flashcards: "",
-        quizzes: "",
+        flashcards: [],
+        quizzes: [],
     });
-
     const [files, setFiles] = useState<Record<TabKey, File[]>>({
         summaries: [],
         flashcards: [],
         quizzes: [],
     });
-
     const [loading, setLoading] = useState(false);
-    const [dragActive, setDragActive] = useState(false);
 
     const handleGenerate = async () => {
         const input = inputs[activeTab];
@@ -41,52 +39,50 @@ export default function GetStartedPage() {
         if (!input.trim() && tabFiles.length === 0) return;
 
         setLoading(true);
-        setOutputs((prev) => ({ ...prev, [activeTab]: "" }));
+        setOutputs((prev) => ({ ...prev, [activeTab]: activeTab === "summaries" ? "" : [] }));
 
         try {
+            const base64Files = await Promise.all(
+                tabFiles.map(async (file) => {
+                    const data = await fileToBase64(file);
+                    return { name: file.name, mimeType: file.type, data };
+                })
+            );
+
+            const filteredFiles = base64Files.filter((file) =>
+                acceptedMimeTypes.includes(file.mimeType)
+            );
+
             const res = await fetch("/api/ai/generate", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     type: activeTab,
                     text: input,
-                    files: tabFiles,
+                    files: filteredFiles,
                 }),
             });
 
             const data = await res.json();
-            setOutputs((prev) => ({ ...prev, [activeTab]: data.result }));
+            if (data?.error) {
+                toast.error(data.error);
+                return;
+            }
+
+            setOutputs((prev) => ({
+                ...prev,
+                [activeTab]:
+                    activeTab === "summaries"
+                        ? data.summary
+                        : activeTab === "flashcards"
+                            ? data.flashcards
+                            : data.quizzes,
+            }));
         } catch (err) {
             console.error(err);
-            setOutputs((prev) => ({ ...prev, [activeTab]: "Error generating content" }));
+            toast.error("Failed to generate response.");
         } finally {
             setLoading(false);
-        }
-    };
-
-
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files) {
-            const tabFiles = files[activeTab];
-            setFiles((prev) => ({
-                ...prev,
-                [activeTab]: [...tabFiles, ...Array.from(e.target.files)],
-            }));
-        }
-    };
-
-    const handleDrop = (e: DragEvent<HTMLDivElement>) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setDragActive(false);
-
-        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-            const tabFiles = files[activeTab];
-            setFiles((prev) => ({
-                ...prev,
-                [activeTab]: [...tabFiles, ...Array.from(e.dataTransfer.files)],
-            }));
-            e.dataTransfer.clearData();
         }
     };
 
@@ -98,8 +94,11 @@ export default function GetStartedPage() {
                     Paste your text or upload study files to generate summaries, flashcards, or quizzes.
                 </p>
 
-                {/* Tabs */}
-                <Tabs value={activeTab} onValueChange={(val) => setActiveTab(val as TabKey)} className="w-full">
+                <Tabs
+                    value={activeTab}
+                    onValueChange={(val) => setActiveTab(val as TabKey)}
+                    className="w-full"
+                >
                     <TabsList className="grid w-full grid-cols-3">
                         <TabsTrigger value="summaries">Summaries</TabsTrigger>
                         <TabsTrigger value="flashcards">Flashcards</TabsTrigger>
@@ -108,7 +107,6 @@ export default function GetStartedPage() {
 
                     {(["summaries", "flashcards", "quizzes"] as TabKey[]).map((tab) => (
                         <TabsContent key={tab} value={tab}>
-                            {/* Input Card */}
                             <Card className="mt-4">
                                 <CardHeader>
                                     <CardTitle>Study Material</CardTitle>
@@ -122,69 +120,31 @@ export default function GetStartedPage() {
                                         }
                                         className="min-h-[150px]"
                                     />
-
-                                    {/* Drag & Drop File Upload */}
-                                    <div
-                                        onDragOver={(e) => {
-                                            e.preventDefault();
-                                            e.stopPropagation();
-                                            setDragActive(true);
-                                        }}
-                                        onDragLeave={(e) => {
-                                            e.preventDefault();
-                                            e.stopPropagation();
-                                            setDragActive(false);
-                                        }}
-                                        onDrop={handleDrop}
-                                        className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition ${dragActive ? "border-primary bg-primary/5" : "border-muted-foreground/30"
-                                            }`}
-                                    >
-                                        <input
-                                            id={`file-upload-${tab}`}
-                                            type="file"
-                                            accept=".pdf,.doc,.docx,.ppt,.pptx,.csv,.jpg,.jpeg,.png,.gif"
-                                            multiple
-                                            onChange={handleFileChange}
-                                            className="hidden"
-                                        />
-                                        <label htmlFor={`file-upload-${tab}`} className="flex flex-col items-center gap-2 cursor-pointer">
-                                            <Upload className="h-8 w-8 text-primary" />
-                                            <span className="text-sm text-muted-foreground">
-                                                Drag & drop your files here, or <span className="text-primary">browse</span>
-                                            </span>
-                                        </label>
-                                    </div>
-
-                                    {/* File List */}
-                                    {files[tab].length > 0 && (
-                                        <ul className="text-sm text-muted-foreground space-y-1">
-                                            {files[tab].map((file, idx) => (
-                                                <li key={idx} className="flex items-center gap-2">
-                                                    <FileIcon className="h-4 w-4 text-primary" />
-                                                    {file.name}
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    )}
-
-                                    {/* Generate Button */}
+                                    <FileUploader
+                                        onFilesChange={(allFiles) => setFiles(prev => ({
+                                            ...prev,
+                                            [activeTab]: allFiles
+                                        }))}
+                                    />
                                     <div className="flex justify-end">
                                         <Button
                                             onClick={handleGenerate}
                                             disabled={loading || (!inputs[tab] && files[tab].length === 0)}
                                         >
                                             {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                                            {tab === "summaries"
-                                                ? "Generate Summary"
-                                                : tab === "flashcards"
-                                                    ? "Generate Flashcards"
-                                                    : "Generate Quiz"}
+                                            {loading
+                                                ? "Generating..."
+                                                : tab === "summaries"
+                                                    ? "Generate Summary"
+                                                    : tab === "flashcards"
+                                                        ? "Generate Flashcards"
+                                                        : "Generate Quiz"}
                                         </Button>
                                     </div>
                                 </CardContent>
                             </Card>
 
-                            {/* Output */}
+                            {/* Output Section */}
                             {outputs[tab] && (
                                 <Card className="mt-4">
                                     <CardHeader>
@@ -197,7 +157,57 @@ export default function GetStartedPage() {
                                         </CardTitle>
                                     </CardHeader>
                                     <CardContent>
-                                        <p>{outputs[tab]}</p>
+                                        {/* Summary Output */}
+                                        {tab === "summaries" && (
+                                            <p className="whitespace-pre-line text-muted-foreground">
+                                                <ReactMarkdown
+                                                    remarkPlugins={[remarkGfm]}
+                                                    rehypePlugins={[rehypeRaw]}
+                                                    skipHtml={false}
+                                                >
+                                                    {outputs[tab]}
+                                                </ReactMarkdown>
+                                            </p>
+                                        )}
+
+                                        {/* Flashcards Output */}
+                                        {tab === "flashcards" &&
+                                            Array.isArray(outputs[tab]) &&
+                                            outputs[tab].map((card: Flashcard, i: number) => (
+                                                <div
+                                                    key={i}
+                                                    className="border rounded-xl p-4 mb-3 bg-muted/10"
+                                                >
+                                                    <p className="font-semibold">
+                                                        Q{i + 1}: {card.question}
+                                                    </p>
+                                                    <p className="text-muted-foreground mt-2">
+                                                        {card.answer}
+                                                    </p>
+                                                </div>
+                                            ))}
+
+                                        {/* Quizzes Output */}
+                                        {tab === "quizzes" &&
+                                            Array.isArray(outputs[tab]) &&
+                                            outputs[tab].map((q: QuizQuestion, i: number) => (
+                                                <div
+                                                    key={i}
+                                                    className="border rounded-xl p-4 mb-3 bg-muted/10"
+                                                >
+                                                    <p className="font-semibold mb-2">
+                                                        Q{i + 1}: {q.question}
+                                                    </p>
+                                                    <ul className="list-disc ml-5 text-muted-foreground">
+                                                        {q.options.map((opt, idx) => (
+                                                            <li key={idx}>{opt}</li>
+                                                        ))}
+                                                    </ul>
+                                                    <p className="text-primary mt-2">
+                                                        ✅ Correct: {q.answer}
+                                                    </p>
+                                                </div>
+                                            ))}
                                     </CardContent>
                                 </Card>
                             )}

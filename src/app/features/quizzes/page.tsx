@@ -1,30 +1,26 @@
 "use client";
 
-import { useState, DragEvent } from "react";
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { Loader2, Upload, FileIcon } from "lucide-react";
-
-interface QuizQuestion {
-  question: string;
-  options: string[];
-  answer: string;
-}
+import { Loader2 } from "lucide-react";
+import { acceptedMimeTypes, fileToBase64 } from "@/lib/utils";
+import FileUploader from "@/components/UploadBox";
 
 export default function QuizzesPage() {
   const [input, setInput] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [quizzes, setQuizzes] = useState<QuizQuestion[]>([]);
   const [loading, setLoading] = useState(false);
-  const [dragActive, setDragActive] = useState(false);
-
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
   const [showResult, setShowResult] = useState(false);
 
-  const handleGenerate = () => {
-    if (!input.trim() && files.length === 0) return;
+  const handleGenerate = async () => {
+    const validFiles = files.filter((file) => acceptedMimeTypes.includes(file.type));
+
+    if (!input.trim() && validFiles.length === 0) return;
 
     setLoading(true);
     setQuizzes([]);
@@ -32,44 +28,34 @@ export default function QuizzesPage() {
     setSelectedOptions([]);
     setShowResult(false);
 
-    // Mock AI response
-    setTimeout(() => {
-      const generated: QuizQuestion[] = [
-        {
-          question: "What is ScholarMate?",
-          options: ["AI study companion", "Video game", "Cooking app", "Music player"],
-          answer: "AI study companion",
-        },
-        {
-          question: "Which file types are supported?",
-          options: ["PDF, DOCX, PPT", "Only PDF", "Only images", "Text only"],
-          answer: "PDF, DOCX, PPT",
-        },
-        {
-          question: "What study tools are included?",
-          options: ["Summaries, Flashcards, Quizzes", "Movies", "Games", "None"],
-          answer: "Summaries, Flashcards, Quizzes",
-        },
-      ];
-      setQuizzes(generated);
+    try {
+
+      const base64Files = await Promise.all(
+        validFiles.map(async (file) => {
+          const data = await fileToBase64(file);
+          return { name: file.name, mimeType: file.type, data };
+        })
+      );
+
+      const res = await fetch("/api/ai/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "quizzes",
+          text: input,
+          files: base64Files,
+        }),
+      });
+
+      if (!res.ok) throw new Error("Failed to generate quizzes");
+      const result = await res.json();
+
+      setQuizzes(result.quizzes || []);
+    } catch (error) {
+      console.error("Quiz generation error:", error);
+      alert("Failed to generate quizzes. Please try again.");
+    } finally {
       setLoading(false);
-    }, 1500);
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      setFiles((prev) => [...prev, ...Array.from(e.target.files)]);
-    }
-  };
-
-  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      setFiles((prev) => [...prev, ...Array.from(e.dataTransfer.files)]);
-      e.dataTransfer.clearData();
     }
   };
 
@@ -91,14 +77,18 @@ export default function QuizzesPage() {
     if (currentIndex > 0) setCurrentIndex(currentIndex - 1);
   };
 
-  const correctCount = quizzes.filter((q, idx) => selectedOptions[idx] === q.answer).length;
+  const correctCount = quizzes.filter(
+    (q, idx) => selectedOptions[idx] === q.answer
+  ).length;
 
   const getResultMessage = () => {
     const total = quizzes.length;
     const score = correctCount;
 
-    if (score === total) return { msg: "Perfect! 🎉 You're a study master!", emoji: "🏆" };
-    if (score >= total / 2) return { msg: "Good job! 😊 Keep improving!", emoji: "👍" };
+    if (score === total)
+      return { msg: "Perfect! 🎉 You're a study master!", emoji: "🏆" };
+    if (score >= total / 2)
+      return { msg: "Good job! 😊 Keep improving!", emoji: "👍" };
     return { msg: "Keep trying! 💪 You can do better!", emoji: "💡" };
   };
 
@@ -110,7 +100,6 @@ export default function QuizzesPage() {
           Paste your notes or upload study files to generate interactive quizzes instantly.
         </p>
 
-        {/* Input Card */}
         {quizzes.length === 0 && (
           <Card>
             <CardHeader>
@@ -124,50 +113,9 @@ export default function QuizzesPage() {
                 className="min-h-[150px]"
               />
 
-              <div
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setDragActive(true);
-                }}
-                onDragLeave={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setDragActive(false);
-                }}
-                onDrop={handleDrop}
-                className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition ${
-                  dragActive
-                    ? "border-primary bg-primary/5"
-                    : "border-muted-foreground/30"
-                }`}
-              >
-                <input
-                  id="file-upload"
-                  type="file"
-                  accept=".pdf,.doc,.docx,.ppt,.pptx,.csv,.jpg,.jpeg,.png,.gif"
-                  multiple
-                  onChange={handleFileChange}
-                  className="hidden"
-                />
-                <label htmlFor="file-upload" className="flex flex-col items-center gap-2 cursor-pointer">
-                  <Upload className="h-8 w-8 text-primary" />
-                  <span className="text-sm text-muted-foreground">
-                    Drag & drop files here, or <span className="text-primary">browse</span>
-                  </span>
-                </label>
-              </div>
-
-              {files.length > 0 && (
-                <ul className="text-sm text-muted-foreground space-y-1">
-                  {files.map((file, idx) => (
-                    <li key={idx} className="flex items-center gap-2">
-                      <FileIcon className="h-4 w-4 text-primary" />
-                      {file.name}
-                    </li>
-                  ))}
-                </ul>
-              )}
+              <FileUploader
+                onFilesChange={(allFiles) => setFiles(allFiles)}
+              />
 
               <div className="flex justify-end">
                 <Button
@@ -175,25 +123,30 @@ export default function QuizzesPage() {
                   disabled={loading || (!input && files.length === 0)}
                 >
                   {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  Generate Quizzes
+                  {loading ? "Generating..." : "Generate Quizzes"}
                 </Button>
               </div>
             </CardContent>
           </Card>
         )}
 
-        {/* Quiz Card */}
         {quizzes.length > 0 && !showResult && (
           <Card>
             <CardHeader>
-              <CardTitle>Question {currentIndex + 1} of {quizzes.length}</CardTitle>
+              <CardTitle>
+                Question {currentIndex + 1} of {quizzes.length}
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <p className="font-semibold">{quizzes[currentIndex].question}</p>
               {quizzes[currentIndex].options.map((opt) => (
                 <Button
                   key={opt}
-                  variant={selectedOptions[currentIndex] === opt ? "default" : "outline"}
+                  variant={
+                    selectedOptions[currentIndex] === opt
+                      ? "default"
+                      : "outline"
+                  }
                   className="w-full text-left"
                   onClick={() => selectOption(opt)}
                 >
@@ -205,7 +158,10 @@ export default function QuizzesPage() {
                 <Button onClick={handleBack} disabled={currentIndex === 0}>
                   Back
                 </Button>
-                <Button onClick={handleNext} disabled={!selectedOptions[currentIndex]}>
+                <Button
+                  onClick={handleNext}
+                  disabled={!selectedOptions[currentIndex]}
+                >
                   {currentIndex === quizzes.length - 1 ? "Finish" : "Next"}
                 </Button>
               </div>
@@ -213,7 +169,6 @@ export default function QuizzesPage() {
           </Card>
         )}
 
-        {/* Result Card */}
         {showResult && (
           <Card className="text-center">
             <CardHeader>
@@ -221,16 +176,21 @@ export default function QuizzesPage() {
             </CardHeader>
             <CardContent>
               <p className="text-3xl mb-4">{getResultMessage().emoji}</p>
-              <p className="text-lg font-semibold mb-2">{getResultMessage().msg}</p>
+              <p className="text-lg font-semibold mb-2">
+                {getResultMessage().msg}
+              </p>
               <p>
                 You got {correctCount} out of {quizzes.length} correct.
               </p>
-              <Button className="mt-4" onClick={() => {
-                setQuizzes([]);
-                setInput("");
-                setFiles([]);
-                setShowResult(false);
-              }}>
+              <Button
+                className="mt-4"
+                onClick={() => {
+                  setQuizzes([]);
+                  setInput("");
+                  setFiles([]);
+                  setShowResult(false);
+                }}
+              >
                 Try Again
               </Button>
             </CardContent>
