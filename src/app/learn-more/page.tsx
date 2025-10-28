@@ -135,7 +135,7 @@ export default function LearnMorePage() {
                         <CardTitle>All Formats Supported</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        Upload PDFs, Word docs, images, or slides — ScholarMate adapts to your material.
+                        Upload PDFs — ScholarMate adapts to your material.
                     </CardContent>
                 </Card>
 
@@ -175,8 +175,7 @@ export default function LearnMorePage() {
                     <AccordionItem value="item-2">
                         <AccordionTrigger>What file types are supported?</AccordionTrigger>
                         <AccordionContent>
-                            You can upload PDFs, Word documents (.docx), PowerPoint slides (.pptx),
-                            images, and CSV files.
+                            You can only upload PDFs
                         </AccordionContent>
                     </AccordionItem>
 

@@ -159,7 +159,7 @@ export default function SummariesPage() {
             <CardTitle>Multi-Format Support</CardTitle>
           </CardHeader>
           <CardContent>
-            Upload PDFs, CSVs, or images — ScholarMate handles them all with ease.
+            Upload PDFs — ScholarMate handles them all with ease.
           </CardContent>
         </Card>
 

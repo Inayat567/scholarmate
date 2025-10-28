@@ -63,17 +63,17 @@ export default function AboutPage() {
 
           <div className="flex flex-col sm:flex-row justify-center gap-4 mt-4">
             <Button asChild variant="outline" size="lg">
-              <a href="mailto:support@scholarmate.com" className="flex items-center gap-2">
+              <a href="mailto:support@inayatalibalti100@gmail.com" className="flex items-center gap-2">
                 <Mail className="h-5 w-5" /> Email
               </a>
             </Button>
             <Button asChild variant="outline" size="lg">
-              <a href="https://github.com/" target="_blank" className="flex items-center gap-2">
+              <a href="https://github.com/Inayat567" target="_blank" className="flex items-center gap-2">
                 <Github className="h-5 w-5" /> GitHub
               </a>
             </Button>
             <Button asChild variant="outline" size="lg">
-              <a href="https://linkedin.com/" target="_blank" className="flex items-center gap-2">
+              <a href="https://www.linkedin.com/in/inayatalii/" target="_blank" className="flex items-center gap-2">
                 <Linkedin className="h-5 w-5" /> LinkedIn
               </a>
             </Button>
