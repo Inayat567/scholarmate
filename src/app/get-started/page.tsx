@@ -39,6 +39,52 @@ export default function GetStartedPage() {
     });
     const [loading, setLoading] = useState(false);
     const [status, setStatus] = useState('Checking AI availability...');
+    const [isSummarizerReady, setIsSummarizerReady] = useState(false);
+    const [isLanguageModelReady, setIsLanguageModelReady] = useState(false);
+
+    useEffect(() => {
+        const checkAI = async () => {
+            if (typeof window === 'undefined') {
+                setStatus('Running in non-browser environment.');
+                return;
+            }
+
+            const isModern = 'ai' in window;
+            const isLegacySummarizer = 'Summarizer' in window;
+            const isLegacyLanguageModel = 'LanguageModel' in window;
+            let summarizerReady = false;
+            let lmReady = false;
+
+            if (isModern) {
+                const ai: any = (window as any).ai;
+                if (ai.summarizer) {
+                    summarizerReady = true;
+                }
+                if (ai.languageModel || isLegacyLanguageModel) {
+                    lmReady = true;
+                }
+            }
+
+            if (!isModern && isLegacySummarizer) {
+                summarizerReady = true;
+            }
+
+            setIsSummarizerReady(summarizerReady);
+            setIsLanguageModelReady(lmReady);
+
+            if (summarizerReady && lmReady) {
+                setStatus('READY: All Chrome AI APIs available.');
+            } else if (summarizerReady) {
+                setStatus('READY: Summarizer available. Language Model detected for flashcards/quizzes.');
+            } else if (lmReady) {
+                setStatus('READY: Language Model available. Summarizer not available.');
+            } else {
+                setStatus('CRITICAL: No Chrome AI APIs detected. Enable flags in chrome://flags.');
+            }
+        };
+
+        checkAI();
+    }, []);
 
     const handleGenerate = async () => {
         let input = inputs[activeTab];
