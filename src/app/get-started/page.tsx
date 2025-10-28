@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -9,11 +9,18 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
-import { acceptedMimeTypes, fileToBase64 } from "@/lib/utils";
+import { acceptedMimeTypes, fileToBase64, inferMimeType, isValidBase64 } from "@/lib/utils";
 import { toast } from "sonner";
 import FileUploader from "@/components/UploadBox";
+import { runChromeAI } from "@/lib/aiClient";
+import { usePDFJS } from "@/lib/usePdf";
 
 export default function GetStartedPage() {
+
+    usePDFJS(async (pdfjs) => {
+        console.log("✅ PDFJS Loaded:", pdfjs);
+    });
+
     const [activeTab, setActiveTab] = useState<TabKey>("summaries");
     const [inputs, setInputs] = useState<Record<TabKey, string>>({
         summaries: "",
@@ -31,9 +38,10 @@ export default function GetStartedPage() {
         quizzes: [],
     });
     const [loading, setLoading] = useState(false);
+    const [status, setStatus] = useState('Checking AI availability...');
 
     const handleGenerate = async () => {
-        const input = inputs[activeTab];
+        let input = inputs[activeTab];
         const tabFiles = files[activeTab];
 
         if (!input.trim() && tabFiles.length === 0) return;
@@ -42,30 +50,62 @@ export default function GetStartedPage() {
         setOutputs((prev) => ({ ...prev, [activeTab]: activeTab === "summaries" ? "" : [] }));
 
         try {
-            const base64Files = await Promise.all(
-                tabFiles.map(async (file) => {
-                    const data = await fileToBase64(file);
-                    return { name: file.name, mimeType: file.type, data };
-                })
-            );
+            let filteredFiles: FileData[] = [];
+            if (tabFiles.length > 0) {
+                const base64Files = await Promise.all(
+                    tabFiles.map(async (file) => {
+                        try {
+                            const base64 = await fileToBase64(file);
 
-            const filteredFiles = base64Files.filter((file) =>
-                acceptedMimeTypes.includes(file.mimeType)
-            );
+                            if (!isValidBase64(base64)) {
+                                console.warn(`Invalid Base64 for ${file.name}, skipping.`);
+                                return null;
+                            }
 
-            const res = await fetch("/api/ai/generate", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    type: activeTab,
-                    text: input,
-                    files: filteredFiles,
-                }),
+                            // Infer MIME type if file.type is undefined/empty
+                            let mimeType = file.type;
+                            if (!mimeType || mimeType === '') {
+                                mimeType = inferMimeType(file.name);
+                                console.log(`Inferred MIME type for ${file.name}: ${mimeType}`);
+                            }
+
+                            if (mimeType === "application/pdf") {
+                                const arrayBuffer = await file.arrayBuffer();
+                                const pdf = await (await import("pdfjs-dist/webpack.mjs"))
+                                    .getDocument({ data: arrayBuffer })
+                                    .promise;
+
+                                let text = "";
+                                for (let i = 1; i <= Math.min(pdf.numPages, 5); i++) {
+                                    const page = await pdf.getPage(i);
+                                    const content = await page.getTextContent();
+                                    text += content.items.map((i: any) => i.str).join(" ") + "\n\n";
+                                }
+                                input = input + text.slice(0, 2000);
+                                return null
+                            }
+
+                            return { name: file.name, mimeType, data: base64 };
+                        } catch (error) {
+                            console.warn(`Error processing ${file.name}:`, error);
+                            return null;
+                        }
+                    })
+                );
+
+                filteredFiles = base64Files.filter((file): file is NonNullable<typeof file> =>
+                    file !== null && acceptedMimeTypes.includes(file.mimeType)
+                );
+            }
+
+            const result = await runChromeAI({
+                type: activeTab,
+                text: input,
+                files: filteredFiles,
             });
 
-            const data = await res.json();
-            if (data?.error) {
-                toast.error(data.error);
+            if (result.error) {
+                toast.error(result.error);
                 return;
             }
 
@@ -73,18 +113,22 @@ export default function GetStartedPage() {
                 ...prev,
                 [activeTab]:
                     activeTab === "summaries"
-                        ? data.summary
+                        ? result.summary || result.raw
                         : activeTab === "flashcards"
-                            ? data.flashcards
-                            : data.quizzes,
+                            ? result.flashcards || result.raw
+                            : result.quizzes || result.raw,
             }));
-        } catch (err) {
+            setStatus(`Successfully generated ${activeTab}!`);
+        } catch (err: any) {
             console.error(err);
-            toast.error("Failed to generate response.");
+            setStatus(`ERROR: ${err.message}`);
+            toast.error(`Failed to generate ${activeTab}: ${err.message}`);
         } finally {
             setLoading(false);
         }
     };
+
+    const showWarning = status.includes('CRITICAL');
 
     return (
         <div className="min-h-screen flex flex-col items-center px-6 py-12">
@@ -92,6 +136,17 @@ export default function GetStartedPage() {
                 <h1 className="text-3xl font-bold text-center">Get Started</h1>
                 <p className="text-center text-muted-foreground">
                     Paste your text or upload study files to generate summaries, flashcards, or quizzes.
+                </p>
+
+                {showWarning && (
+                    <div className="p-4 bg-red-100 border-l-4 border-red-500 text-red-700 rounded-lg shadow-inner" role="alert">
+                        <p className="font-bold">AI API Issue</p>
+                        <p>No Chrome AI APIs detected. Enable flags in chrome://flags and relaunch browser.</p>
+                    </div>
+                )}
+
+                <p className={`text-sm font-semibold text-center ${status.includes('ERROR') || status.includes('CRITICAL') ? 'text-red-600' : status.includes('READY') ? 'text-green-600' : 'text-gray-600'}`}>
+                    **Status:** {status}
                 </p>
 
                 <Tabs
@@ -121,15 +176,14 @@ export default function GetStartedPage() {
                                         className="min-h-[150px]"
                                     />
                                     <FileUploader
-                                        onFilesChange={(allFiles) => setFiles(prev => ({
+                                        onFilesChange={(allFiles: File[]) => setFiles(prev => ({
                                             ...prev,
-                                            [activeTab]: allFiles
+                                            [tab]: allFiles
                                         }))}
                                     />
                                     <div className="flex justify-end">
                                         <Button
                                             onClick={handleGenerate}
-                                            disabled={loading || (!inputs[tab] && files[tab].length === 0)}
                                         >
                                             {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                                             {loading
@@ -144,7 +198,6 @@ export default function GetStartedPage() {
                                 </CardContent>
                             </Card>
 
-                            {/* Output Section */}
                             {outputs[tab] && (
                                 <Card className="mt-4">
                                     <CardHeader>
@@ -157,8 +210,7 @@ export default function GetStartedPage() {
                                         </CardTitle>
                                     </CardHeader>
                                     <CardContent>
-                                        {/* Summary Output */}
-                                        {tab === "summaries" && (
+                                        {tab === "summaries" && typeof outputs[tab] === 'string' && (
                                             <p className="whitespace-pre-line text-muted-foreground">
                                                 <ReactMarkdown
                                                     remarkPlugins={[remarkGfm]}
@@ -170,7 +222,6 @@ export default function GetStartedPage() {
                                             </p>
                                         )}
 
-                                        {/* Flashcards Output */}
                                         {tab === "flashcards" &&
                                             Array.isArray(outputs[tab]) &&
                                             outputs[tab].map((card: Flashcard, i: number) => (
@@ -187,7 +238,6 @@ export default function GetStartedPage() {
                                                 </div>
                                             ))}
 
-                                        {/* Quizzes Output */}
                                         {tab === "quizzes" &&
                                             Array.isArray(outputs[tab]) &&
                                             outputs[tab].map((q: QuizQuestion, i: number) => (

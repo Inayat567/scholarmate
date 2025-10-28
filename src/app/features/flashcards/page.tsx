@@ -6,8 +6,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
-import { acceptedMimeTypes, fileToBase64 } from "@/lib/utils";
+import { acceptedMimeTypes, fileToBase64, isValidBase64 } from "@/lib/utils";
 import FileUploader from "@/components/UploadBox";
+import { runChromeAI } from "@/lib/aiClient";
+import { toast } from "sonner";
 
 export default function FlashcardsPage() {
     const [input, setInput] = useState("");
@@ -27,39 +29,53 @@ export default function FlashcardsPage() {
         setCompleted(false);
 
         try {
-            const validFiles = files.filter((file) =>
-                acceptedMimeTypes.includes(file.type)
-            );
-
+            let prompt = input
             const base64Files = await Promise.all(
-                validFiles.map(async (file) => {
-                    const data = await fileToBase64(file);
-                    return { name: file.name, mimeType: file.type, data };
+                files.map(async (file) => {
+                    const base64 = await fileToBase64(file);
+                    if (!isValidBase64(base64)) {
+                        console.warn(`Invalid Base64 for ${file.name}, skipping.`);
+                        return null;
+                    }
+
+                    if (file.type === "application/pdf") {
+                        const arrayBuffer = await file.arrayBuffer();
+                        const pdf = await (await import("pdfjs-dist/webpack.mjs"))
+                            .getDocument({ data: arrayBuffer })
+                            .promise;
+
+                        let text = "";
+                        for (let i = 1; i <= Math.min(pdf.numPages, 5); i++) {
+                            const page = await pdf.getPage(i);
+                            const content = await page.getTextContent();
+                            text += content.items.map((i: any) => i.str).join(" ") + "\n\n";
+                        }
+                        prompt = prompt + text.slice(0, 2000);
+                        return null
+                    }
+                    return { name: file.name, mimeType: file.type, data: base64 };
                 })
             );
 
-            const res = await fetch("/api/ai/generate", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    type: "flashcards",
-                    text: input,
-                    files: base64Files,
-                }),
+            const filteredFiles: FileData[] = base64Files.filter((file): file is NonNullable<typeof file> =>
+                file !== null && acceptedMimeTypes.includes(file.mimeType)
+            );
+
+            const result = await runChromeAI({
+                type: "flashcards",
+                text: prompt,
+                files: filteredFiles,
             });
 
-            if (!res.ok) throw new Error("Failed to generate flashcards");
-            const result = await res.json();
-            
-            // Assuming the API returns { result: "[{...}, {...}]" } as a string
-            // If it returns { result: [{...}, {...}] } as an array, use:
-            // setFlashcards(result.result || []);
+            if (result.error) {
+                toast.error(result.error);
+                return;
+            }
 
-            // If it returns { flashcards: [...] } as in your original code:
             setFlashcards(result.flashcards || []);
-
-        } catch (err) {
+        } catch (err: any) {
             console.error("Error generating flashcards:", err);
+            toast.error(`Failed to generate flashcards: ${err.message}`);
         } finally {
             setLoading(false);
         }

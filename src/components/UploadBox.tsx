@@ -5,7 +5,7 @@ import { Upload, FileIcon, X } from "lucide-react";
 
 export default function FileUploader({
   onFilesChange,
-  acceptedTypes = ".pdf,.csv,.jpg,.jpeg,.png",
+  acceptedTypes = ".pdf",
   multiple = true,
 }: FileUploaderProps) {
   const [files, setFiles] = useState<File[]>([]);

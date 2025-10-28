@@ -1,6 +1,5 @@
 type TabKey = "summaries" | "flashcards" | "quizzes";
 
-
 interface Flashcard {
     question: string;
     answer: string;
@@ -16,4 +15,10 @@ interface FileUploaderProps {
     onFilesChange: (files: File[]) => void;
     acceptedTypes?: string;
     multiple?: boolean;
+}
+
+interface FileData {
+    name: string;
+    mimeType: string,
+    data: string
 }

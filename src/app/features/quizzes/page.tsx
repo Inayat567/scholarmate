@@ -5,8 +5,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
-import { acceptedMimeTypes, fileToBase64 } from "@/lib/utils";
+import { acceptedMimeTypes, fileToBase64, isValidBase64 } from "@/lib/utils";
 import FileUploader from "@/components/UploadBox";
+import { runChromeAI } from "@/lib/aiClient";
+import { toast } from "sonner";
 
 export default function QuizzesPage() {
   const [input, setInput] = useState("");
@@ -18,9 +20,8 @@ export default function QuizzesPage() {
   const [showResult, setShowResult] = useState(false);
 
   const handleGenerate = async () => {
-    const validFiles = files.filter((file) => acceptedMimeTypes.includes(file.type));
 
-    if (!input.trim() && validFiles.length === 0) return;
+    if (!input.trim() && files.length === 0) return;
 
     setLoading(true);
     setQuizzes([]);
@@ -29,31 +30,53 @@ export default function QuizzesPage() {
     setShowResult(false);
 
     try {
-
+      let prompt = input
       const base64Files = await Promise.all(
-        validFiles.map(async (file) => {
-          const data = await fileToBase64(file);
-          return { name: file.name, mimeType: file.type, data };
+        files.map(async (file) => {
+          const base64 = await fileToBase64(file);
+          if (!isValidBase64(base64)) {
+            console.warn(`Invalid Base64 for ${file.name}, skipping.`);
+            return null;
+          }
+
+          if (file.type === "application/pdf") {
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await (await import("pdfjs-dist/webpack.mjs"))
+              .getDocument({ data: arrayBuffer })
+              .promise;
+
+            let text = "";
+            for (let i = 1; i <= Math.min(pdf.numPages, 5); i++) {
+              const page = await pdf.getPage(i);
+              const content = await page.getTextContent();
+              text += content.items.map((i: any) => i.str).join(" ") + "\n\n";
+            }
+            prompt = prompt + text.slice(0, 2000);
+            return null
+          }
+          return { name: file.name, mimeType: file.type, data: base64 };
         })
       );
 
-      const res = await fetch("/api/ai/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: "quizzes",
-          text: input,
-          files: base64Files,
-        }),
+      const filteredFiles: FileData[] = base64Files.filter((file): file is NonNullable<typeof file> =>
+        file !== null && acceptedMimeTypes.includes(file.mimeType)
+      );
+
+      const result = await runChromeAI({
+        type: "quizzes",
+        text: prompt,
+        files: filteredFiles,
       });
 
-      if (!res.ok) throw new Error("Failed to generate quizzes");
-      const result = await res.json();
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
 
       setQuizzes(result.quizzes || []);
-    } catch (error) {
-      console.error("Quiz generation error:", error);
-      alert("Failed to generate quizzes. Please try again.");
+    } catch (err: any) {
+      console.error("Quiz generation error:", err);
+      toast.error(`Failed to generate quizzes: ${err.message}`);
     } finally {
       setLoading(false);
     }
