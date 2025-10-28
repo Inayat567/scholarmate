@@ -4,7 +4,7 @@ import * as PDFJS from "pdfjs-dist/types/src/pdf";
 
 export const usePDFJS = (onLoad: (pdfjs: typeof PDFJS) => Promise<void>, deps: (string | number | boolean | undefined | null)[] = []) => {
 
-    const [pdfjs, setPDFJS] = useState<typeof PDFJS>(null);
+    const [pdfjs, setPDFJS] = useState<typeof PDFJS>();
 
     useEffect(() => {
         import("pdfjs-dist/webpack.mjs").then(setPDFJS)

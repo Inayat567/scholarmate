@@ -44,15 +44,14 @@ export async function runChromeAI({
           // { type: "image", languages: ["en"] },
           // { type: "audio", languages: ["en"] }
         ],
-        expectedOutputs: [{ type: "text", languages: ["en"] }],
-        monitor(m) {
-          m.addEventListener('downloadprogress', (e) => {
-            console.log(`Download progress for session: ${e.loaded * 100}%`);
-          });
-        }
+        expectedOutputs: [{ type: "text", languages: ["en"] }]
       });
-    } catch (error) {
-      throw new Error(`Failed to create legacy LanguageModel session: ${error.message}`);
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        throw new Error(`Failed to create legacy LanguageModel session: ${error.message}`);
+      } else {
+        throw new Error(`Failed to create legacy LanguageModel session: ${String(error)}`);
+      }
     }
   }
 
@@ -128,9 +127,12 @@ ${text}`;
   try {
     const messages = [{ role: "user", content }];
     result = await session.prompt(messages, { outputLanguage: 'en' });
-  } catch (error) {
-    console.error("Prompt error details:", error);
-    throw new Error(`Failed to prompt LanguageModel session: ${error.message}`);
+  } catch (error: unknown) {
+    if (error instanceof Error) {
+      throw new Error(`Failed to create legacy LanguageModel session: ${error.message}`);
+    } else {
+      throw new Error(`Failed to create legacy LanguageModel session: ${String(error)}`);
+    }
   }
 
   const cleaned = result.replace(/```json/i, "").replace(/```/g, "").trim();

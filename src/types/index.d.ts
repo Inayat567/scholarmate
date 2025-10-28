@@ -22,3 +22,8 @@ interface FileData {
     mimeType: string,
     data: string
 }
+
+declare module 'pdfjs-dist/webpack.mjs' {
+  import * as pdfjsLib from 'pdfjs-dist';
+  export = pdfjsLib;
+}
